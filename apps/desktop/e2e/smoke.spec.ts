@@ -130,6 +130,57 @@ test("external links leave the app", async () => {
   expect(new URL(page.url()).origin).toBe(new URL(SERVER!).origin);
 });
 
+test("every download goes to the browser, none is saved by the app", async () => {
+  test.skip(!SERVER, "set CHATTER_E2E_SERVER to run");
+  const page = await app.firstWindow();
+  await page.fill("#url", SERVER!);
+  await page.click("#submit");
+  await page.waitForURL(`${new URL(SERVER!).origin}/`);
+
+  await app.evaluate(({ session, shell }) => {
+    const seen = { opened: [] as string[], saved: [] as string[] };
+    (globalThis as unknown as { seen: typeof seen }).seen = seen;
+    shell.openExternal = async (url: string) => {
+      seen.opened.push(url);
+    };
+    // Runs after the app's own listener; record and cancel what got through.
+    session.defaultSession.on("will-download", (event, item) => {
+      if (event.defaultPrevented) return;
+      seen.saved.push(item.getURL());
+      item.cancel();
+    });
+  });
+  const upload = `${new URL(SERVER!).origin}/external/vc-join.wav`;
+  await page.evaluate((upload) => {
+    const click = (href: string, download: string) => {
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = download;
+      a.click();
+    };
+    window.open(upload, "_blank");
+    click(upload, "vc-join.wav"); // how a file card links its upload
+    // How the client saves a calendar file: never in the page, revoked at once.
+    const built = URL.createObjectURL(new Blob(["BEGIN:VCALENDAR"], { type: "text/calendar" }));
+    click(built, "Game night.ics");
+    URL.revokeObjectURL(built);
+  }, upload);
+
+  type Seen = { opened: string[]; saved: string[] };
+  const seen = () => app.evaluate(() => (globalThis as unknown as { seen: Seen }).seen);
+  await expect.poll(async () => (await seen()).opened.length).toBe(3);
+  const { opened, saved } = await seen();
+  expect(saved).toEqual([]);
+  expect(opened.filter((url) => url === upload)).toHaveLength(2);
+
+  // The built file reaches the browser as a download of the same bytes.
+  const local = opened.find((url) => url !== upload)!;
+  expect(new URL(local).hostname).toBe("127.0.0.1");
+  const res = await fetch(local);
+  expect(res.headers.get("content-disposition")).toBe("attachment; filename*=UTF-8''Game%20night.ics");
+  expect(await res.text()).toBe("BEGIN:VCALENDAR");
+});
+
 test("a chatter:// link opens that page of the server", async () => {
   test.skip(!SERVER, "set CHATTER_E2E_SERVER to run");
   // A fresh app, already pointed at the server, launched by the link.

@@ -1,4 +1,5 @@
 import { shell, type WebContents } from "electron";
+import { isUploadUrl } from "./downloads";
 import { isServerUrl, isSignInUrl, isWebUrl } from "./origin";
 
 /**
@@ -18,9 +19,9 @@ export function attachNavigationLock(contents: WebContents): void {
 
   contents.setWindowOpenHandler(({ url }) => {
     if (isServerUrl(url)) {
-      // A target=_blank link to an upload should save the file rather than
-      // replace the app with it; other server pages open in place.
-      if (new URL(url).pathname.startsWith("/external/")) contents.downloadURL(url);
+      // A target=_blank link to an upload opens in the browser, which shows or
+      // downloads it; other server pages open in place.
+      if (isUploadUrl(url)) void shell.openExternal(url);
       else void contents.loadURL(url);
     } else if (isWebUrl(url)) {
       void shell.openExternal(url);

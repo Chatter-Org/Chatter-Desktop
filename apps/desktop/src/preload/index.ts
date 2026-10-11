@@ -44,6 +44,14 @@ if (role.role === "shell") {
     duckingGet: () => ipcRenderer.invoke(IPC.duckingGet),
     duckingSet: (amount) => ipcRenderer.invoke(IPC.duckingSet, amount),
     onAudio: (listener) => void audioListeners.add(listener),
+    settingsGet: () => ipcRenderer.invoke(IPC.settingsGet),
+    settingsSet: (update) => ipcRenderer.invoke(IPC.settingsSet, update),
+    runningApps: () => ipcRenderer.invoke(IPC.runningApps),
+    changeServer: () => void ipcRenderer.invoke(IPC.changeServer),
+    checkForUpdates: () => void ipcRenderer.invoke(IPC.checkForUpdates),
+    openLogs: () => void ipcRenderer.invoke(IPC.openLogs),
+    settingsListening: (on) => ipcRenderer.send(IPC.settingsListening, on),
+    onSettingsOpen: (listener) => void ipcRenderer.on(IPC.settingsOpen, () => listener()),
   };
   contextBridge.exposeInMainWorld("__chatterEngine", channel);
   contextBridge.exposeInMainWorld("__chatterShell", {
@@ -84,5 +92,19 @@ if (role.role === "shell") {
   } catch {
     // executeInMainWorld is experimental; without it a click still focuses a
     // visible window, it just can't restore one from the tray.
+  }
+
+  // Downloads go to the system browser (main/downloads.ts), which for a file
+  // the page built means reading its blob: URL back after the click. The
+  // client revokes that URL straight after clicking, so let it linger.
+  try {
+    contextBridge.executeInMainWorld({
+      func: () => {
+        const revoke = URL.revokeObjectURL.bind(URL);
+        URL.revokeObjectURL = (url: string) => void setTimeout(() => revoke(url), 60_000);
+      },
+    });
+  } catch {
+    // Without it, files the page builds can't be handed to the browser.
   }
 }

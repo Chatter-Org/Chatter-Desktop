@@ -5,6 +5,7 @@ import { applyUnreadCount, unreadFromTitle } from "./badge";
 import { attachContextMenu } from "./contextMenu";
 import { resetEngineOnNavigation } from "./engineBridge";
 import { attachNavigationLock } from "./navLock";
+import { attachShortcuts } from "./shortcuts";
 import { getServerOrigin, getWindowBounds, setWindowBounds } from "./serverStore";
 import { shellPageUrl } from "./shellPages";
 import { setTrayUnread } from "./tray";
@@ -39,7 +40,6 @@ export function createMainWindow(options: { hidden?: boolean } = {}): BrowserWin
     title: "Chatter",
     icon,
     show: false,
-    autoHideMenuBar: true,
     backgroundColor: "#262626",
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
@@ -82,6 +82,7 @@ export function createMainWindow(options: { hidden?: boolean } = {}): BrowserWin
   const contents = window.webContents;
   attachNavigationLock(contents);
   attachContextMenu(contents);
+  attachShortcuts(contents);
   resetEngineOnNavigation(contents);
 
   contents.on("page-title-updated", (_event, title) => {

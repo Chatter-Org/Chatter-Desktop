@@ -1,10 +1,11 @@
-import { app, ipcMain, Menu, session, shell, type IpcMainInvokeEvent } from "electron";
+import { app, ipcMain, Menu, session, type IpcMainInvokeEvent } from "electron";
 import { IPC, type PreloadRole } from "../shared/ipc";
 import { launchedAtLogin } from "./autostart";
 import { findDeepLink, openDeepLink, openPendingDeepLink, registerProtocol } from "./deepLinks";
 import { installDisplayMediaHandler } from "./displayMedia";
+import { handOffDownloads } from "./downloads";
 import { engineFeatures, installEngineBridge } from "./engineBridge";
-import { engine, logsDir } from "./engineHost";
+import { engine } from "./engineHost";
 import { isServerUrl } from "./origin";
 import { installPermissionHandlers } from "./permissions";
 import { flushSession, persistCookiesPromptly } from "./persistence";
@@ -12,7 +13,7 @@ import { getServerOrigin, normaliseOrigin, probeServer, setServerOrigin } from "
 import { isShellUrl } from "./shellPages";
 import { startGameDetection } from "./games";
 import { getPrefs } from "./serverStore";
-import { installSettings, showSettings } from "./settingsWindow";
+import { forgetSettingsListener, installSettings, showSettings } from "./settingsWindow";
 import { createTray } from "./tray";
 import { checkForUpdatesNow, startUpdater } from "./updater";
 import { createMainWindow, getMainWindow, loadHome, markQuitting, showMainWindow, showServerPicker } from "./window";
@@ -53,13 +54,17 @@ function start(): void {
     await engine.ready(3000);
 
     installPermissionHandlers(session.defaultSession);
+    handOffDownloads(session.defaultSession);
     installSettings();
     installDisplayMediaHandler(session.defaultSession, getMainWindow);
     registerIpc();
-    Menu.setApplicationMenu(buildAppMenu());
+    // No menu bar, so Alt has nothing to show; its shortcuts live in
+    // window.ts and its items in Chatter's own settings.
+    Menu.setApplicationMenu(null);
 
     // Started by the system at sign-in, stay in the tray if asked to.
-    createMainWindow({ hidden: launchedAtLogin() && getPrefs().startWithSystem && getPrefs().startMinimized });
+    const main = createMainWindow({ hidden: launchedAtLogin() && getPrefs().startWithSystem && getPrefs().startMinimized });
+    forgetSettingsListener(main.webContents);
     createTray({
       show: showMainWindow,
       settings: showSettings,
@@ -104,7 +109,12 @@ function registerIpc(): void {
     } else if (isServerUrl(url)) {
       role = {
         role: "remote",
-        info: { bridgeVersion: 1, appVersion: app.getVersion(), platform: process.platform, features: engineFeatures() },
+        info: {
+          bridgeVersion: 1,
+          appVersion: app.getVersion(),
+          platform: process.platform,
+          features: [...engineFeatures(), "desktop-settings"],
+        },
       };
     }
     event.returnValue = role;
@@ -134,46 +144,6 @@ function registerIpc(): void {
   });
 
   ipcMain.handle(IPC.changeServer, (event) => {
-    if (fromShell(event)) showServerPicker();
+    if (fromShell(event) || isServerUrl(event.senderFrame?.url)) showServerPicker();
   });
-}
-
-/** Hidden behind Alt; mostly here so the usual shortcuts work. */
-function buildAppMenu(): Menu {
-  return Menu.buildFromTemplate([
-    {
-      label: "Chatter",
-      submenu: [
-        { label: "Settings…", click: showSettings },
-        { label: "Change server…", click: showServerPicker },
-        { type: "separator" },
-        { role: "quit" },
-      ],
-    },
-    { role: "editMenu" },
-    {
-      label: "View",
-      submenu: [
-        { role: "reload" },
-        { role: "forceReload" },
-        { role: "toggleDevTools" },
-        { type: "separator" },
-        { role: "resetZoom" },
-        { role: "zoomIn" },
-        { role: "zoomOut" },
-        { type: "separator" },
-        { role: "togglefullscreen" },
-      ],
-    },
-    { role: "windowMenu" },
-    {
-      label: "Help",
-      submenu: [
-        { label: "Open logs folder", click: () => void shell.openPath(logsDir()) },
-        { label: "Check for updates…", click: () => void checkForUpdatesNow() },
-        { type: "separator" },
-        { label: `Chatter ${app.getVersion()}`, enabled: false },
-      ],
-    },
-  ]);
 }

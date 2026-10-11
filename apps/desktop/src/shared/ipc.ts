@@ -12,9 +12,17 @@ export const IPC = {
   pickerGetSources: "picker:get-sources",
   pickerChoose: "picker:choose",
   keybindDone: "keybind:done",
+  // Desktop settings: the shell's fallback window and the Chatter page both
+  // use these, as do changeServer above and the three below.
   settingsGet: "settings:get",
   settingsSet: "settings:set",
   runningApps: "settings:running-apps",
+  checkForUpdates: "settings:check-for-updates",
+  openLogs: "settings:open-logs",
+  /** Page → main: whether the page draws the settings itself. */
+  settingsListening: "settings:listening",
+  /** Main → page: show the desktop settings. */
+  settingsOpen: "settings:open",
   // Remote pages (served by the user's Chatter server)
   remoteFocus: "remote:focus",
   engineRequest: "engine:request",

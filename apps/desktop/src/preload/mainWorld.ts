@@ -9,7 +9,7 @@
 // (`pc.onicecandidate = …`) have to be real main-world objects, which is why
 // this isn't a contextBridge export.
 
-import type { ChatterDesktopBridge, PttBinding } from "../contract/bridge";
+import type { ChatterDesktopBridge, DesktopAppSettings, PttBinding } from "../contract/bridge";
 import type {
   AudioDevice,
   DisplayCaptureBackend,
@@ -38,6 +38,16 @@ export interface EngineChannel {
   duckingGet(): Promise<number>;
   duckingSet(amount: number): Promise<void>;
   onAudio(listener: (stream: number, samples: ArrayBuffer) => void): void;
+  settingsGet(): Promise<DesktopAppSettings>;
+  settingsSet(update: Partial<DesktopAppSettings>): Promise<DesktopAppSettings>;
+  runningApps(): Promise<{ exe: string; name: string }[]>;
+  changeServer(): void;
+  checkForUpdates(): void;
+  openLogs(): void;
+  /** Tells the app whether the page draws its settings, so the tray knows
+   *  where "Settings…" goes. */
+  settingsListening(on: boolean): void;
+  onSettingsOpen(listener: () => void): void;
 }
 
 export interface BridgeBase {
@@ -438,6 +448,10 @@ export function installDesktopBridge(base: BridgeBase): void {
     },
   };
 
+  // ─── Settings ──────────────────────────────────────────────────────────
+  const openListeners = new Set<() => void>();
+  engine.onSettingsOpen(() => openListeners.forEach((l) => l()));
+
   const bridge: ChatterDesktopBridge = {
     ...base,
     features: [...features],
@@ -458,6 +472,23 @@ export function installDesktopBridge(base: BridgeBase): void {
           getBinding: () => engine.pttGet(),
           captureBinding: () => engine.pttCapture(),
           clearBinding: () => engine.pttClear(),
+        }
+      : undefined,
+    settings: features.has("desktop-settings")
+      ? {
+          get: () => engine.settingsGet(),
+          set: (update) => engine.settingsSet(update),
+          runningApps: () => engine.runningApps(),
+          changeServer: () => engine.changeServer(),
+          checkForUpdates: () => engine.checkForUpdates(),
+          openLogs: () => engine.openLogs(),
+          onOpenRequest: (listener) => {
+            openListeners.add(listener);
+            if (openListeners.size === 1) engine.settingsListening(true);
+            return () => {
+              if (openListeners.delete(listener) && openListeners.size === 0) engine.settingsListening(false);
+            };
+          },
         }
       : undefined,
   };
