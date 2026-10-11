@@ -1,7 +1,7 @@
 {
   "name": "chatter-desktop",
   "productName": "Chatter",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Desktop client for Chatter, the self-hosted chat app.",
   "license": "GPL-3.0-or-later",
   "private": true,
