@@ -85,6 +85,14 @@ impl Peers {
         peer_id: &str,
         ice_servers: Vec<IceServerArg>,
     ) -> Result<Value, String> {
+        // Ids are only unique within one page load, and a reload starts the
+        // counter again. Replacing a connection without closing it left the
+        // old one alive — its callbacks hold it — and still reporting events
+        // under an id that now meant somebody else.
+        if self.peers.contains_key(peer_id) {
+            log::warn!("{peer_id}: created again while still open; closing the old one");
+            let _ = self.close(peer_id);
+        }
         let mut config = RtcConfiguration::default();
         config.ice_servers = ice_servers
             .into_iter()
@@ -108,6 +116,8 @@ impl Peers {
         let out = self.out.clone();
         let id = peer_id.to_string();
         pc.on_connection_state_change(Some(Box::new(move |s| {
+            // Who could hear whom used to be impossible to tell from a log.
+            log::info!("{id}: connection {}", state_name(s));
             out.event(
                 "peer.state",
                 json!({ "peerId": id, "state": state_name(s) }),
@@ -124,8 +134,10 @@ impl Peers {
                 .iter()
                 .position(|t| t.mid() == mid && mid.is_some());
             let (Some(index), MediaStreamTrack::Audio(track)) = (index, ev.track) else {
+                log::warn!("{id}: ignored a remote track with mid {mid:?}");
                 return;
             };
+            log::info!("{id}: remote audio on transceiver {index}");
             track_map.lock().insert(index, track);
             out.event("peer.track", json!({ "peerId": id, "index": index }));
         })));
@@ -227,7 +239,7 @@ impl Peers {
         let candidate = IceCandidate::parse(mid, index, candidate).map_err(err)?;
         // A browser resolves these quietly too; a stale candidate isn't fatal.
         if let Err(e) = pc.add_ice_candidate(candidate).await {
-            log::debug!("add_ice_candidate: {e:?}");
+            log::warn!("{peer_id}: add_ice_candidate: {e:?}");
         }
         Ok(Value::Null)
     }
